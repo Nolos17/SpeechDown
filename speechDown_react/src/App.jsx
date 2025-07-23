@@ -2,6 +2,9 @@ import { BrowserRouter as Router, Routes, Route, Link } from "react-router-dom";
 import { useState } from "react";
 import Home from "./pages/Home";
 import Users from "./pages/Users";
+import Children from "./pages/Children";
+import Activities from "./pages/Activities";
+import ActivityDetail from "./pages/ActivityDetail";
 import "./App.css";
 
 function App() {
@@ -19,12 +22,21 @@ function App() {
               <Link className="nav-link" to="/users">
                 Usuarios
               </Link>
+              <Link className="nav-link" to="/children">
+                Niños
+              </Link>
+              <Link className="nav-link" to="/activities">
+                Actividades
+              </Link>
             </div>
           </nav>
 
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/users" element={<Users />} />
+            <Route path="/children" element={<Children />} />
+            <Route path="/activities" element={<Activities />} />
+            <Route path="/activities/:id" element={<ActivityDetail />} />
           </Routes>
         </Router>
       </div>

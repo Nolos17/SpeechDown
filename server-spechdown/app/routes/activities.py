@@ -11,9 +11,16 @@ client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY"),
     base_url=os.getenv("OPENAI_BASE_URL")
 )
-# --------------------------------------------
+
+# Utilidad para insertar actividad en DB
+def save_activity(activity_dict):
+    inserted = mongo.db.activities.insert_one(activity_dict)
+    activity_dict["_id"] = str(inserted.inserted_id)
+    activity_dict["created_by"] = str(activity_dict["created_by"])
+    return activity_dict
+
+
 # Obtener todas las actividades
-# --------------------------------------------
 @activities_bp.route('/', methods=['GET'])
 def get_activities():
     try:
@@ -28,9 +35,7 @@ def get_activities():
         return jsonify({'error': str(e)}), 500
 
 
-# --------------------------------------------
 # Crear una actividad manual
-# --------------------------------------------
 @activities_bp.route('/', methods=['POST'])
 def create_activity():
     data = request.get_json()
@@ -52,9 +57,7 @@ def create_activity():
         return jsonify({'error': 'ID inválido o error interno'}), 400
 
 
-# --------------------------------------------
 # Obtener una actividad por ID
-# --------------------------------------------
 @activities_bp.route('/<id>', methods=['GET'])
 def get_activity(id):
     try:
@@ -68,9 +71,7 @@ def get_activity(id):
         return jsonify({'error': 'ID inválido'}), 400
 
 
-# --------------------------------------------
 # Actualizar una actividad por ID
-# --------------------------------------------
 @activities_bp.route('/<id>', methods=['PUT'])
 def update_activity(id):
     data = request.get_json()
@@ -85,9 +86,7 @@ def update_activity(id):
         return jsonify({'error': 'ID inválido o error de datos'}), 400
 
 
-# --------------------------------------------
 # Eliminar una actividad por ID
-# --------------------------------------------
 @activities_bp.route('/<id>', methods=['DELETE'])
 def delete_activity(id):
     try:
@@ -99,54 +98,148 @@ def delete_activity(id):
         return jsonify({'error': 'ID inválido'}), 400
 
 
-# --------------------------------------------
-# Generar una actividad usando IA (OpenRouter)
-# --------------------------------------------
-@activities_bp.route('/generate', methods=['POST'])
-def generate_activity():
+# GENERAR ACTIVIDAD IA: JUEGOS DE LECTURA
+@activities_bp.route('/generate/reading', methods=['POST'])
+def generate_reading_activity():
     data = request.get_json()
-
-    child_age = data.get('child_age')
-    task_type = data.get('task_type')
-    syllable_type = data.get('syllable_type')
+    age = data.get('age')
     therapist_id = data.get('therapist_id')
+    length = data.get('length', 5)
+    theme = data.get('theme', 'animales')
 
-    if not child_age or not task_type or not syllable_type or not therapist_id:
-        return jsonify({"error": "Faltan parámetros necesarios"}), 400
+    if not age or not therapist_id:
+        return jsonify({"error": "Faltan parámetros age y therapist_id"}), 400
 
     prompt = (
-        f"Genera una {task_type} de 5 oraciones con palabras con sílabas {syllable_type} "
-        f"para un niño de {child_age} años, enfocada en terapia de habla para Síndrome de Down."
+        f"Genera un cuento corto de {length} oraciones para un niño de {age} años, "
+        f"con lenguaje sencillo y temática de {theme}, adecuado para terapia de lectura."
     )
 
     try:
-        # Nueva forma de llamar a la API
         response = client.chat.completions.create(
-            model="openai/gpt-3.5-turbo",  # puedes cambiar modelo si quieres
+            model="openai/gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "Eres un generador de ejercicios de terapia de habla para niños con síndrome de Down."},
+                {"role": "system", "content": "Eres un generador de cuentos terapéuticos para niños."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
-            max_tokens=200
+            max_tokens=300
         )
-
         content = response.choices[0].message.content.strip()
-
         activity = {
-            "title": f"{task_type.capitalize()} terapéutica para {child_age} años",
+            "title": f"Cuento terapéutico ({theme})",
             "content": content,
+            "type": "lectura",
             "created_by": ObjectId(therapist_id),
             "created_at": datetime.utcnow(),
             "is_ai_generated": True,
             "prompt": prompt
         }
-
-        inserted = mongo.db.activities.insert_one(activity)
-        activity["_id"] = str(inserted.inserted_id)
-        activity["created_by"] = therapist_id
-
-        return jsonify(activity), 201
+        return jsonify(save_activity(activity)), 201
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# GENERAR ACTIVIDAD IA: JUEGOS DE PRONUNCIACIÓN
+@activities_bp.route('/generate/pronunciation', methods=['POST'])
+def generate_pronunciation_activity():
+    data = request.get_json()
+    age = data.get('age')
+    therapist_id = data.get('therapist_id')
+    syllable_type = data.get('syllable_type', 'fáciles')
+    count = data.get('count', 10)
+
+    if not age or not therapist_id:
+        return jsonify({"error": "Faltan parámetros age y therapist_id"}), 400
+
+    prompt = (
+        f"Genera una lista de {count} palabras con sílabas {syllable_type} para un niño de {age} años "
+        f"que practica pronunciación."
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model="openai/gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "Eres un generador de palabras para ejercicios de pronunciación."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.5,
+            max_tokens=150
+        )
+        content = response.choices[0].message.content.strip()
+        activity = {
+            "title": f"Ejercicio de pronunciación ({syllable_type})",
+            "content": content,
+            "type": "pronunciacion",
+            "created_by": ObjectId(therapist_id),
+            "created_at": datetime.utcnow(),
+            "is_ai_generated": True,
+            "prompt": prompt
+        }
+        return jsonify(save_activity(activity)), 201
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@activities_bp.route('/<id>/progress', methods=['POST'])
+def save_progress(id):
+    data = request.get_json()
+    try:
+        progress = {
+            "activity_id": ObjectId(id),
+            "notes": data.get("notes", ""),
+            "completed": data.get("completed", False),
+            "created_at": datetime.utcnow()
+        }
+        mongo.db.activity_progress.insert_one(progress)
+        return jsonify({"message": "Progreso guardado"}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+
+# GENERAR ACTIVIDAD IA: JUEGOS DE COMPRENSIÓN
+@activities_bp.route('/generate/comprehension', methods=['POST'])
+def generate_comprehension_activity():
+    data = request.get_json()
+    age = data.get('age')
+    therapist_id = data.get('therapist_id')
+    question_count = data.get('question_count', 3)
+    theme = data.get('theme', 'cotidiana')
+
+    if not age or not therapist_id:
+        return jsonify({"error": "Faltan parámetros age y therapist_id"}), 400
+
+    prompt = (
+        f"Genera un texto corto de 3-4 oraciones sobre una situación {theme} para un niño de {age} años, "
+        f"seguido de {question_count} preguntas de comprensión con respuestas."
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model="openai/gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "Eres un generador de ejercicios de comprensión lectora para niños."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=400
+        )
+        content = response.choices[0].message.content.strip()
+        activity = {
+            "title": f"Comprensión lectora ({theme})",
+            "content": content,
+            "type": "comprension",
+            "created_by": ObjectId(therapist_id),
+            "created_at": datetime.utcnow(),
+            "is_ai_generated": True,
+            "prompt": prompt
+        }
+        return jsonify(save_activity(activity)), 201
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    
